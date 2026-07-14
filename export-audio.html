@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Export Splash Audio</title>
+  <style>
+    body { font-family: sans-serif; padding: 40px; background: #f5f5f5; }
+    button { padding: 12px 24px; font-size: 16px; margin: 10px; cursor: pointer; border: none; border-radius: 8px; color: #fff; }
+    .explode { background: #ff025f; }
+    .gather { background: #6d02da; }
+    .both { background: #333; }
+    h1 { margin-bottom: 20px; }
+    p { color: #666; margin-top: 20px; }
+  </style>
+</head>
+<body>
+  <h1>Export Robogebra Splash Audio</h1>
+  <button class="explode" onclick="exportSound('explode')">Download Explode Sound (.wav)</button>
+  <button class="gather" onclick="exportSound('gather')">Download Gather Sound (.wav)</button>
+  <button class="both" onclick="exportSound('both')">Download Combined (.wav)</button>
+  <p>You can convert WAV to MP3 using any online converter or ffmpeg:<br>
+    <code>ffmpeg -i sound.wav sound.mp3</code>
+  </p>
+
+  <script>
+    function renderExplode(ctx, startTime) {
+      let now = startTime;
+
+      // Noise burst whoosh
+      let bufSize = ctx.sampleRate * 0.5;
+      let buf = ctx.createBuffer(1, bufSize, ctx.sampleRate);
+      let data = buf.getChannelData(0);
+      for (let i = 0; i < bufSize; i++) {
+        data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (ctx.sampleRate * 0.08));
+      }
+      let noise = ctx.createBufferSource();
+      noise.buffer = buf;
+      let nFilter = ctx.createBiquadFilter();
+      nFilter.type = 'lowpass';
+      nFilter.frequency.setValueAtTime(3000, now);
+      nFilter.frequency.exponentialRampToValueAtTime(200, now + 0.4);
+      let nGain = ctx.createGain();
+      noise.connect(nFilter);
+      nFilter.connect(nGain);
+      nGain.connect(ctx.destination);
+      nGain.gain.setValueAtTime(0.18, now);
+      nGain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+      noise.start(now);
+      noise.stop(now + 0.45);
+
+      // Descending tone
+      let osc = ctx.createOscillator();
+      osc.type = 'sine';
+      let oGain = ctx.createGain();
+      osc.connect(oGain);
+      oGain.connect(ctx.destination);
+      osc.frequency.setValueAtTime(600, now);
+      osc.frequency.exponentialRampToValueAtTime(60, now + 0.35);
+      oGain.gain.setValueAtTime(0.2, now);
+      oGain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+      osc.start(now);
+      osc.stop(now + 0.4);
+
+      // Sub hit
+      let sub = ctx.createOscillator();
+      sub.type = 'sine';
+      let sGain = ctx.createGain();
+      sub.connect(sGain);
+      sGain.connect(ctx.destination);
+      sub.frequency.setValueAtTime(80, now);
+      sub.frequency.exponentialRampToValueAtTime(40, now + 0.3);
+      sGain.gain.setValueAtTime(0.25, now);
+      sGain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+      sub.start(now);
+      sub.stop(now + 0.35);
+    }
+
+    function renderGather(ctx, startTime) {
+      let now = startTime;
+
+      // Ascending shimmer chord
+      [250, 375, 500, 625].forEach(function(freq, i) {
+        let osc = ctx.createOscillator();
+        osc.type = 'sine';
+        let gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        let d = i * 0.07;
+        osc.frequency.setValueAtTime(freq * 0.4, now + d);
+        osc.frequency.exponentialRampToValueAtTime(freq, now + d + 0.5);
+        gain.gain.setValueAtTime(0, now);
+        gain.gain.linearRampToValueAtTime(0.1, now + d + 0.1);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + d + 0.7);
+
+        osc.start(now + d);
+        osc.stop(now + d + 0.7);
+      });
+
+      // Rising noise shimmer
+      let bufSize = ctx.sampleRate * 0.6;
+      let buf = ctx.createBuffer(1, bufSize, ctx.sampleRate);
+      let data = buf.getChannelData(0);
+      for (let i = 0; i < bufSize; i++) {
+        let env = Math.sin((i / bufSize) * Math.PI);
+        data[i] = (Math.random() * 2 - 1) * env * 0.3;
+      }
+      let noise = ctx.createBufferSource();
+      noise.buffer = buf;
+      let nFilter = ctx.createBiquadFilter();
+      nFilter.type = 'highpass';
+      nFilter.frequency.setValueAtTime(2000, now);
+      nFilter.frequency.exponentialRampToValueAtTime(6000, now + 0.5);
+      let nGain = ctx.createGain();
+      noise.connect(nFilter);
+      nFilter.connect(nGain);
+      nGain.connect(ctx.destination);
+      nGain.gain.setValueAtTime(0.06, now);
+      nGain.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+      noise.start(now);
+      noise.stop(now + 0.6);
+    }
+
+    async function exportSound(type) {
+      let duration = type === 'both' ? 2.0 : 1.0;
+      let sampleRate = 44100;
+      let ctx = new OfflineAudioContext(1, sampleRate * duration, sampleRate);
+
+      if (type === 'explode' || type === 'both') {
+        renderExplode(ctx, 0);
+      }
+      if (type === 'gather') {
+        renderGather(ctx, 0);
+      }
+      if (type === 'both') {
+        renderGather(ctx, 1.0);
+      }
+
+      let rendered = await ctx.startRendering();
+      let wav = audioBufferToWav(rendered);
+      let blob = new Blob([wav], { type: 'audio/wav' });
+      let url = URL.createObjectURL(blob);
+
+      let a = document.createElement('a');
+      a.href = url;
+      a.download = type === 'both' ? 'robogebra-splash-audio.wav'
+                  : 'robogebra-' + type + '.wav';
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function audioBufferToWav(buffer) {
+      let numChannels = buffer.numberOfChannels;
+      let sampleRate = buffer.sampleRate;
+      let samples = buffer.getChannelData(0);
+      let byteRate = sampleRate * numChannels * 2;
+      let blockAlign = numChannels * 2;
+      let dataSize = samples.length * numChannels * 2;
+      let headerSize = 44;
+      let totalSize = headerSize + dataSize;
+
+      let buf = new ArrayBuffer(totalSize);
+      let view = new DataView(buf);
+
+      // RIFF header
+      writeString(view, 0, 'RIFF');
+      view.setUint32(4, totalSize - 8, true);
+      writeString(view, 8, 'WAVE');
+
+      // fmt chunk
+      writeString(view, 12, 'fmt ');
+      view.setUint32(16, 16, true);
+      view.setUint16(20, 1, true); // PCM
+      view.setUint16(22, numChannels, true);
+      view.setUint32(24, sampleRate, true);
+      view.setUint32(28, byteRate, true);
+      view.setUint16(32, blockAlign, true);
+      view.setUint16(34, 16, true); // bits per sample
+
+      // data chunk
+      writeString(view, 36, 'data');
+      view.setUint32(40, dataSize, true);
+
+      let offset = 44;
+      for (let i = 0; i < samples.length; i++) {
+        let s = Math.max(-1, Math.min(1, samples[i]));
+        view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+        offset += 2;
+      }
+
+      return buf;
+    }
+
+    function writeString(view, offset, string) {
+      for (let i = 0; i < string.length; i++) {
+        view.setUint8(offset + i, string.charCodeAt(i));
+      }
+    }
+  </script>
+</body>
+</html>
