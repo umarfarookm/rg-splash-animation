@@ -24,11 +24,14 @@ const CW = 720;
 const CH = 1600;
 
 // Phase durations (ms)
-const T_STATIC  = 2000;
-const T_EXPLODE = 1200;
-const T_FLOAT   = 700;
-const T_GATHER  = 1200;
-const T_FINAL   = 2000;
+// 0: STATIC → 1: TRANSFORM → 2: TYPEWRITE → 3: HOLD → 4: EXPLODE → 5: FLOAT → 6: GATHER → loop to 1
+const T_STATIC    = 1000;
+const T_TRANSFORM = 800;
+const T_TYPEWRITE = 1200;
+const T_HOLD      = 1500;
+const T_EXPLODE   = 1600;
+const T_FLOAT     = 700;
+const T_GATHER    = 1200;
 
 function setup() {
   createCanvas(CW, CH);
@@ -169,7 +172,7 @@ function drawTapScreen() {
   noStroke();
   let pulse = 120 + sin(millis() / 500) * 80;
   fill(49, 49, 49, pulse);
-  text('Tap to start', ox, oy + 24 * sc);
+  text('Tap to start', ox, oy + 28 * sc);
   pop();
 }
 
@@ -306,16 +309,16 @@ function drawRadialGlow(now, elapsed) {
   let glowAlpha = 0;
   let glowSize = 22 * sc;
 
-  if (phase === 0) {
+  if (phase <= 3) {
+    // Logo visible at center during phases 0-3
     glowAlpha = 12;
-    glowSize += sin(now / 1200) * 1.5 * sc;
-  } else if (phase === 1) {
-    glowAlpha = 12 * (1 - constrain(elapsed / 600, 0, 1));
-  } else if (phase === 3) {
-    glowAlpha = 12 * constrain((elapsed - 400) / 600, 0, 1);
     glowSize += sin(now / 1200) * 1.5 * sc;
   } else if (phase === 4) {
-    glowAlpha = 12;
+    // Fade out as logo explodes
+    glowAlpha = 12 * (1 - constrain(elapsed / 400, 0, 1));
+  } else if (phase === 6) {
+    // Fade in as logo gathers
+    glowAlpha = 12 * constrain((elapsed - 400) / 600, 0, 1);
     glowSize += sin(now / 1200) * 1.5 * sc;
   }
 
@@ -418,67 +421,128 @@ function easeInCubic(t) {
   return t * t * t;
 }
 
+// Helper: compute text metrics for R positioning
+function getTextMetrics() {
+  let fontSize = 7 * sc;
+  textFont('Poppins');
+  textSize(fontSize);
+  textStyle(NORMAL);
+  drawingContext.font = '500 ' + fontSize + 'px Poppins';
+  textAlign(LEFT, CENTER);
+
+  let word = "Robogebra";
+  let fullW = textWidth(word);
+  let rW = textWidth("R");
+  let textY = oy + 22 * sc;
+  let textStartX = ox - fullW / 2;
+  let rCenterX = textStartX + rW / 2;
+  let shrinkFactor = fontSize / (28 * sc);
+
+  return { fontSize, fullW, rW, textY, textStartX, rCenterX, shrinkFactor };
+}
+
 function draw() {
-  if (waitingForTap) {
-    drawTapScreen();
-    return;
-  }
+  if (waitingForTap) { drawTapScreen(); return; }
 
   background(255);
-
   let now = millis();
   let elapsed = now - phaseStart;
-
   let prevPhase = phase;
-  if (phase === 0 && elapsed > T_STATIC)  { phase = 1; phaseStart = now; elapsed = 0; }
-  if (phase === 1 && elapsed > T_EXPLODE) { phase = 2; phaseStart = now; elapsed = 0; }
-  if (phase === 2 && elapsed > T_FLOAT)   { phase = 3; phaseStart = now; elapsed = 0; }
-  if (phase === 3 && elapsed > T_GATHER)  { phase = 4; phaseStart = now; elapsed = 0; }
-  if (phase === 4 && elapsed > T_FINAL)   { phase = 1; phaseStart = now; elapsed = 0; }
 
-  // Trigger burst + sound when explode starts
-  if (prevPhase !== 1 && phase === 1) { spawnBurst(); playExplodeSound(); }
-  // Trigger sound when gather starts
-  if (prevPhase !== 3 && phase === 3) { playGatherSound(); }
+  if (phase === 0 && elapsed > T_STATIC)    { phase = 1; phaseStart = now; elapsed = 0; }
+  if (phase === 1 && elapsed > T_TRANSFORM) { phase = 2; phaseStart = now; elapsed = 0; }
+  if (phase === 2 && elapsed > T_TYPEWRITE) { phase = 3; phaseStart = now; elapsed = 0; }
+  if (phase === 3 && elapsed > T_HOLD)      { phase = 4; phaseStart = now; elapsed = 0; }
+  if (phase === 4 && elapsed > T_EXPLODE)   { phase = 5; phaseStart = now; elapsed = 0; }
+  if (phase === 5 && elapsed > T_FLOAT)     { phase = 6; phaseStart = now; elapsed = 0; }
+  if (phase === 6 && elapsed > T_GATHER)    { phase = 1; phaseStart = now; elapsed = 0; }
 
-  // Background layers
+  if (prevPhase !== 4 && phase === 4) { spawnBurst(); playExplodeSound(); }
+  if (prevPhase !== 6 && phase === 6) { playGatherSound(); }
+
   updateAndDrawParticles(now);
   drawRadialGlow(now, elapsed);
   updateAndDrawBurst();
 
-  push();
-  translate(ox, oy);
-  scale(sc);
+  let tm = getTextMetrics();
 
-  if (phase === 4) {
-    let breathe = 1 + sin(now / 800) * 0.012;
-    scale(breathe);
+  if (phase <= 3) {
+    // --- Phases 0-3: Original logo ALWAYS stays at center ---
+    push();
+    translate(ox, oy);
+    scale(sc);
+    noStroke();
+    for (let s of shapes) {
+      fill(s.color[0], s.color[1], s.color[2]);
+      s.draw();
+    }
+    pop();
+
+    // Phase 1: A COPY of the logo flies down to R text position
+    if (phase === 1) {
+      drawLogoCopy(elapsed, tm);
+    }
+
+  } else {
+    // --- Phases 4-6: Logo shapes scatter / float / gather ---
+    push();
+    translate(ox, oy);
+    scale(sc);
+    noStroke();
+    for (let i = 0; i < shapes.length; i++) {
+      drawScatterShape(i, elapsed, now);
+    }
+    pop();
   }
 
-  noStroke();
-
-  for (let i = 0; i < shapes.length; i++) {
-    drawLogoShape(i, elapsed, now);
-  }
-
-  pop();
-
-  drawBrandText(elapsed, now);
+  drawBrandText(elapsed, now, tm);
 }
 
-function drawLogoShape(i, elapsed, now) {
+// Draw a COPY of the logo that flies from center down to R text position
+function drawLogoCopy(elapsed, tm) {
+  let t = easeInOutCubic(elapsed / T_TRANSFORM);
+  let copyX = lerp(ox, tm.rCenterX, t);
+  let copyY = lerp(oy, tm.textY, t);
+  let copySc = lerp(sc, sc * tm.shrinkFactor, t);
+  // Fade out logo copy in last 30% as "R" letter fades in
+  let copyAlpha = t > 0.7 ? lerp(255, 0, (t - 0.7) / 0.3) : 255;
+
+  push();
+  translate(copyX, copyY);
+  scale(copySc);
+  noStroke();
+  for (let s of shapes) {
+    fill(s.color[0], s.color[1], s.color[2], copyAlpha);
+    s.draw();
+  }
+  pop();
+
+  // Fade in "R" letter at target position during last 30%
+  if (t > 0.7) {
+    let rAlpha = lerp(0, 255, (t - 0.7) / 0.3);
+    push();
+    textFont('Poppins');
+    textSize(tm.fontSize);
+    textStyle(NORMAL);
+    drawingContext.font = '500 ' + tm.fontSize + 'px Poppins';
+    textAlign(LEFT, CENTER);
+    fill(49, 49, 49, rAlpha);
+    noStroke();
+    text("R", tm.textStartX, tm.textY);
+    pop();
+  }
+}
+
+// Draw a single shape during scatter/float/gather phases (4-6)
+function drawScatterShape(i, elapsed, now) {
   let s = shapes[i];
   let delay = i * 100;
-
   let morphT = 0;
   let offX = 0, offY = 0;
   let rot = 0;
 
   switch (phase) {
-    case 0:
-      break;
-
-    case 1: {
+    case 4: { // EXPLODE
       let t = easeInOutCubic(constrain((elapsed - delay) / 800, 0, 1));
       morphT = t;
       offX = cos(s.scatterAngle) * s.scatterDist * t;
@@ -486,11 +550,9 @@ function drawLogoShape(i, elapsed, now) {
       rot = t * HALF_PI * (i % 2 === 0 ? 1 : -1);
       break;
     }
-
-    case 2: {
+    case 5: { // FLOAT
       morphT = 1;
       let ft = elapsed / 1000;
-      // Smooth ramp in/out so no jump at phase transitions
       let floatIn = constrain(elapsed / 400, 0, 1);
       let floatOut = 1 - constrain((elapsed - T_FLOAT + 400) / 400, 0, 1);
       let floatAmp = floatIn * floatOut;
@@ -499,143 +561,83 @@ function drawLogoShape(i, elapsed, now) {
       rot = HALF_PI * (i % 2 === 0 ? 1 : -1) + sin(ft * 0.8 + s.floatPhase) * 0.15 * floatAmp;
       break;
     }
-
-    case 3: {
+    case 6: { // GATHER
       let t = easeInOutCubic(constrain((elapsed - delay) / 800, 0, 1));
       morphT = 1 - t;
-      let startX = cos(s.scatterAngle) * s.scatterDist;
-      let startY = sin(s.scatterAngle) * s.scatterDist;
-      offX = lerp(startX, 0, t);
-      offY = lerp(startY, 0, t);
-      let startRot = HALF_PI * (i % 2 === 0 ? 1 : -1);
-      rot = lerp(startRot, 0, t);
+      offX = lerp(cos(s.scatterAngle) * s.scatterDist, 0, t);
+      offY = lerp(sin(s.scatterAngle) * s.scatterDist, 0, t);
+      rot = lerp(HALF_PI * (i % 2 === 0 ? 1 : -1), 0, t);
       break;
     }
-
-    case 4:
-      break;
   }
 
   push();
   translate(offX, offY);
   translate(s.cx, s.cy);
   rotate(rot);
-
   let popScale = 1 + sin(morphT * PI) * 0.12;
   scale(popScale);
   translate(-s.cx, -s.cy);
-
   fill(s.color[0], s.color[1], s.color[2]);
-
-  if (morphT < 0.5) {
-    s.draw();
-  } else {
-    ellipse(s.cx, s.cy, s.r * 2);
-  }
-
+  if (morphT < 0.5) { s.draw(); } else { ellipse(s.cx, s.cy, s.r * 2); }
   pop();
 }
 
-function textReveal(word, textY, elapsed, delayMs) {
-  let fontSize = 5.5 * sc;
-  textSize(fontSize);
-  textStyle(NORMAL);
-  drawingContext.font = '500 ' + fontSize + 'px Poppins';
-
-  let totalW = textWidth(word);
-  let halfW = totalW / 2 + 4;
-  let underlineY = textY + fontSize * 0.5;
-
-  // Timeline: line expands → text reveals behind it → line fades
-  let lineT = easeOutCubic(constrain((elapsed - delayMs) / 400, 0, 1));
-  let revealT = easeOutCubic(constrain((elapsed - delayMs - 150) / 600, 0, 1));
-  let lineFadeT = easeInCubic(constrain((elapsed - delayMs - 600) / 500, 0, 1));
-
-  // Expanding underline
-  let lineW = lineT * halfW;
-  let lineAlpha = lineT * 255 * (1 - lineFadeT);
-
-  if (lineAlpha > 0) {
-    stroke(109, 2, 218, lineAlpha);
-    strokeWeight(2.2);
-    line(ox - lineW, underlineY, ox + lineW, underlineY);
-    noStroke();
-  }
-
-  // Clip-reveal text from center outward
-  if (revealT > 0) {
-    let clipW = revealT * halfW;
-
-    drawingContext.save();
-    drawingContext.beginPath();
-    drawingContext.rect(
-      ox - clipW,
-      textY - fontSize * 0.7,
-      clipW * 2,
-      fontSize * 1.6
-    );
-    drawingContext.clip();
-
-    fill(49, 49, 49);
-    noStroke();
-    text(word, ox, textY);
-
-    drawingContext.restore();
-  }
-}
-
-function textConceal(word, textY, elapsed) {
-  let fontSize = 5.5 * sc;
-  textSize(fontSize);
-  textStyle(NORMAL);
-  drawingContext.font = '500 ' + fontSize + 'px Poppins';
-
-  let totalW = textWidth(word);
-  let halfW = totalW / 2 + 4;
-
-  // Clip shrinks from edges to center
-  let t = easeInOutCubic(constrain(elapsed / 500, 0, 1));
-  let clipW = (1 - t) * halfW;
-
-  if (clipW > 0.5) {
-    drawingContext.save();
-    drawingContext.beginPath();
-    drawingContext.rect(
-      ox - clipW,
-      textY - fontSize * 0.7,
-      clipW * 2,
-      fontSize * 1.6
-    );
-    drawingContext.clip();
-
-    fill(49, 49, 49);
-    noStroke();
-    text(word, ox, textY);
-
-    drawingContext.restore();
-  }
-}
-
-function drawBrandText(elapsed, now) {
-  let textY = oy + 18 * sc;
-  let word = "Robogebra";
+function drawBrandText(elapsed, now, tm) {
+  let remaining = "obogebra";
 
   push();
   textFont('Poppins');
-  textAlign(CENTER, CENTER);
+  textSize(tm.fontSize);
+  textStyle(NORMAL);
+  drawingContext.font = '500 ' + tm.fontSize + 'px Poppins';
+  textAlign(LEFT, CENTER);
   noStroke();
 
-  if (phase === 0) {
-    textReveal(word, textY, elapsed, 500);
+  if (phase === 2) {
+    // REVEAL: "R" visible, remaining letters grow in Netflix-style wave
+    fill(49, 49, 49);
+    text("R", tm.textStartX, tm.textY);
 
-  } else if (phase === 1) {
-    textConceal(word, textY, elapsed);
+    let x = tm.textStartX + tm.rW;
+    let stagger = T_TYPEWRITE / (remaining.length + 2);
+    let letterDur = stagger * 2.5;
 
-  } else if (phase === 2 || phase === 3) {
-    // Hidden
+    for (let i = 0; i < remaining.length; i++) {
+      let ch = remaining[i];
+      let cw = textWidth(ch);
+      let letterT = easeOutCubic(constrain((elapsed - i * stagger) / letterDur, 0, 1));
+
+      if (letterT > 0) {
+        drawingContext.save();
+        // Scale vertically from bottom of letter (Netflix-style grow up)
+        let cx = x + cw / 2;
+        let cy = tm.textY + tm.fontSize * 0.3;
+        drawingContext.translate(cx, cy);
+        drawingContext.scale(1, letterT);
+        drawingContext.translate(-cx, -cy);
+
+        fill(49, 49, 49, letterT * 255);
+        text(ch, x, tm.textY);
+        drawingContext.restore();
+      }
+
+      x += cw;
+    }
+
+  } else if (phase === 3) {
+    // HOLD: full text visible
+    fill(49, 49, 49);
+    text("Robogebra", tm.textStartX, tm.textY);
 
   } else if (phase === 4) {
-    textReveal(word, textY, elapsed, 0);
+    // EXPLODE: text fades out in first 300ms
+    let fadeT = constrain(elapsed / 300, 0, 1);
+    let a = (1 - fadeT) * 255;
+    if (a > 1) {
+      fill(49, 49, 49, a);
+      text("Robogebra", tm.textStartX, tm.textY);
+    }
   }
 
   pop();
