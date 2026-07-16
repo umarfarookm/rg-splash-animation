@@ -26,7 +26,7 @@ const CH = 1600;
 // Phase durations (ms)
 const T_STATIC  = 2000;
 const T_EXPLODE = 1200;
-const T_FLOAT   = 2500;
+const T_FLOAT   = 700;
 const T_GATHER  = 1200;
 const T_FINAL   = 2000;
 
@@ -304,19 +304,19 @@ function updateAndDrawBurst() {
 // --- Radial glow behind logo ---
 function drawRadialGlow(now, elapsed) {
   let glowAlpha = 0;
-  let glowSize = 28 * sc;
+  let glowSize = 22 * sc;
 
   if (phase === 0) {
-    glowAlpha = 25;
-    glowSize += sin(now / 1200) * 2 * sc;
+    glowAlpha = 12;
+    glowSize += sin(now / 1200) * 1.5 * sc;
   } else if (phase === 1) {
-    glowAlpha = 25 * (1 - constrain(elapsed / 600, 0, 1));
+    glowAlpha = 12 * (1 - constrain(elapsed / 600, 0, 1));
   } else if (phase === 3) {
-    glowAlpha = 25 * constrain((elapsed - 400) / 600, 0, 1);
-    glowSize += sin(now / 1200) * 2 * sc;
+    glowAlpha = 12 * constrain((elapsed - 400) / 600, 0, 1);
+    glowSize += sin(now / 1200) * 1.5 * sc;
   } else if (phase === 4) {
-    glowAlpha = 25;
-    glowSize += sin(now / 1200) * 2 * sc;
+    glowAlpha = 12;
+    glowSize += sin(now / 1200) * 1.5 * sc;
   }
 
   if (glowAlpha > 0) {
@@ -539,7 +539,8 @@ function drawLogoShape(i, elapsed, now) {
 function textReveal(word, textY, elapsed, delayMs) {
   let fontSize = 5.5 * sc;
   textSize(fontSize);
-  textStyle(BOLD);
+  textStyle(NORMAL);
+  drawingContext.font = '500 ' + fontSize + 'px Poppins';
 
   let totalW = textWidth(word);
   let halfW = totalW / 2 + 4;
@@ -586,7 +587,8 @@ function textReveal(word, textY, elapsed, delayMs) {
 function textConceal(word, textY, elapsed) {
   let fontSize = 5.5 * sc;
   textSize(fontSize);
-  textStyle(BOLD);
+  textStyle(NORMAL);
+  drawingContext.font = '500 ' + fontSize + 'px Poppins';
 
   let totalW = textWidth(word);
   let halfW = totalW / 2 + 4;
