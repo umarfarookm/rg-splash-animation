@@ -148,6 +148,93 @@ function playGatherSound() {
   noise.stop(now + 0.6);
 }
 
+function playTransformSound() {
+  if (!audioReady) return;
+  let now = audioCtx.currentTime;
+
+  // Soft descending swoosh — logo copy flying down to R
+  let bufSize = audioCtx.sampleRate * 0.5;
+  let buf = audioCtx.createBuffer(1, bufSize, audioCtx.sampleRate);
+  let data = buf.getChannelData(0);
+  for (let i = 0; i < bufSize; i++) {
+    let env = Math.sin((i / bufSize) * Math.PI) * 0.25;
+    data[i] = (Math.random() * 2 - 1) * env;
+  }
+  let noise = audioCtx.createBufferSource();
+  noise.buffer = buf;
+  let filter = audioCtx.createBiquadFilter();
+  filter.type = 'bandpass';
+  filter.frequency.setValueAtTime(4000, now);
+  filter.frequency.exponentialRampToValueAtTime(800, now + 0.4);
+  filter.Q.setValueAtTime(2, now);
+  let gain = audioCtx.createGain();
+  noise.connect(filter);
+  filter.connect(gain);
+  gain.connect(audioCtx.destination);
+  gain.gain.setValueAtTime(0.12, now);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+  noise.start(now);
+  noise.stop(now + 0.45);
+
+  // Gentle descending tone
+  let osc = audioCtx.createOscillator();
+  osc.type = 'sine';
+  let oGain = audioCtx.createGain();
+  osc.connect(oGain);
+  oGain.connect(audioCtx.destination);
+  osc.frequency.setValueAtTime(800, now);
+  osc.frequency.exponentialRampToValueAtTime(400, now + 0.35);
+  oGain.gain.setValueAtTime(0.08, now);
+  oGain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+  osc.start(now);
+  osc.stop(now + 0.4);
+}
+
+function playRevealSound() {
+  if (!audioReady) return;
+  let now = audioCtx.currentTime;
+
+  // Quick staggered clicks — one per letter, like a typewriter stamp
+  let letters = 8; // "obogebra"
+  for (let i = 0; i < letters; i++) {
+    let d = i * 0.09;
+
+    // Short sharp click (noise burst)
+    let clickSize = Math.floor(audioCtx.sampleRate * 0.015);
+    let clickBuf = audioCtx.createBuffer(1, clickSize, audioCtx.sampleRate);
+    let clickData = clickBuf.getChannelData(0);
+    for (let j = 0; j < clickSize; j++) {
+      clickData[j] = (Math.random() * 2 - 1) * Math.exp(-j / (clickSize * 0.2));
+    }
+    let click = audioCtx.createBufferSource();
+    click.buffer = clickBuf;
+    let cGain = audioCtx.createGain();
+    let cFilter = audioCtx.createBiquadFilter();
+    cFilter.type = 'bandpass';
+    cFilter.frequency.setValueAtTime(3500 + i * 200, now + d);
+    cFilter.Q.setValueAtTime(5, now + d);
+    click.connect(cFilter);
+    cFilter.connect(cGain);
+    cGain.connect(audioCtx.destination);
+    cGain.gain.setValueAtTime(0.1, now + d);
+    cGain.gain.exponentialRampToValueAtTime(0.001, now + d + 0.03);
+    click.start(now + d);
+    click.stop(now + d + 0.03);
+
+    // Tiny resonant ping per letter (rising pitch)
+    let ping = audioCtx.createOscillator();
+    ping.type = 'sine';
+    let pGain = audioCtx.createGain();
+    ping.connect(pGain);
+    pGain.connect(audioCtx.destination);
+    ping.frequency.setValueAtTime(1200 + i * 100, now + d);
+    pGain.gain.setValueAtTime(0.04, now + d);
+    pGain.gain.exponentialRampToValueAtTime(0.001, now + d + 0.06);
+    ping.start(now + d);
+    ping.stop(now + d + 0.06);
+  }
+}
+
 // --- Tap to start (required for audio) ---
 function drawTapScreen() {
   background(255);
@@ -457,6 +544,8 @@ function draw() {
   if (phase === 5 && elapsed > T_FLOAT)     { phase = 6; phaseStart = now; elapsed = 0; }
   if (phase === 6 && elapsed > T_GATHER)    { phase = 1; phaseStart = now; elapsed = 0; }
 
+  if (prevPhase !== 1 && phase === 1) { playTransformSound(); }
+  if (prevPhase !== 2 && phase === 2) { playRevealSound(); }
   if (prevPhase !== 4 && phase === 4) { spawnBurst(); playExplodeSound(); }
   if (prevPhase !== 6 && phase === 6) { playGatherSound(); }
 
